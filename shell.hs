@@ -3,22 +3,64 @@ import System.Directory (doesDirectoryExist, doesFileExist,
 import Text.Printf (printf)
 import System.Process (proc, createProcess, waitForProcess)
 import System.IO (hFlush, stdout, isEOF)
+import System.FilePath.Posix ((</>))
+import Data.List (isPrefixOf)
+import Control.Exception (try, SomeException)
+import Control.Monad (void)
+
+data Config = Config {
+    prompt :: String,
+    aliases :: [Alias]
+}
+
+data Alias = Alias {
+    abbrev :: String,
+    command :: String
+}
 
 main :: IO ()
 main = do
-    loadConfig
-    loop
+    config <- loadConfig
+    loop config
     shutdown
 
-loadConfig :: IO ()
-loadConfig = return ()
+loadConfig :: IO Config
+loadConfig = do
+    home <- getHomeDirectory
+    let file = home </> "hash.rc"
+    exists <- doesFileExist file
+    if exists
+        then parseConfig file
+        else return defaultConfig
+
+defaultConfig :: Config
+defaultConfig = Config {
+    prompt = "> ",
+    aliases = []
+}
+
+parseConfig :: FilePath -> IO Config
+parseConfig path = do
+    input <- lines <$> readFile path
+    let aliasLines = filter ("alias " `isPrefixOf`) input
+        promptLines = filter ("prompt=" `isPrefixOf`) input
+        aliases' = getAliases aliasLines
+    prompt' <- getPrompt promptLines
+    return $ Config {
+        prompt = prompt',
+        aliases = aliases'
+    }
+
+getAliases = undefined
+
+getPrompt = undefined
 
 shutdown :: IO ()
 shutdown = return ()
 
-loop :: IO ()
-loop = do
-    putStr "> "
+loop :: Config -> IO ()
+loop cfg = do
+    putStr (prompt cfg)
     hFlush stdout
     end <- isEOF
     if end
@@ -27,7 +69,7 @@ loop = do
     prog <- words <$> getLine
     status <- execute prog
     case status of
-        0 -> loop
+        0 -> loop cfg
         _ -> return ()
 
 execute :: [String] -> IO Int
@@ -36,7 +78,11 @@ execute (name:args)
     | name == "cd" = go $ cd args
     | name == "exit" = exit
     | name == "help" = go help
-    | otherwise = go $ launch name args
+    | otherwise = do
+        runProc <- try (launch name args) :: IO (Either SomeException ())
+        case runProc of
+            Right _ -> return 0
+            Left _ -> printf "hash: %s: command not found\n" name >> return 0
     where go f = f >> return 0
 
 builtIn :: [String]
@@ -72,5 +118,4 @@ help = do
 launch :: String -> [String] -> IO ()
 launch name args = do
     (_,_,_,p) <- createProcess (proc name args)
-    waitForProcess p
-    return ()
+    void $ waitForProcess p

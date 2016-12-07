@@ -1,4 +1,4 @@
-# haskell-shell
+# hash - haskell-shell
 A very simple shell written in haskell.
 
 ## Inbuilt commands:
