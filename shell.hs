@@ -4,9 +4,11 @@ import Text.Printf (printf)
 import System.Process (proc, createProcess, waitForProcess)
 import System.IO (hFlush, stdout, isEOF)
 import System.FilePath.Posix ((</>))
-import Data.List (isPrefixOf)
+import Data.List (stripPrefix)
 import Control.Exception (try, SomeException)
 import Control.Monad (void)
+import Text.Regex.TDFA ((=~))
+import Data.Maybe (fromJust)
 
 data Config = Config {
     prompt :: String,
@@ -27,7 +29,7 @@ main = do
 loadConfig :: IO Config
 loadConfig = do
     home <- getHomeDirectory
-    let file = home </> "hash.rc"
+    let file = home </> ".hashrc"
     exists <- doesFileExist file
     if exists
         then parseConfig file
@@ -39,21 +41,37 @@ defaultConfig = Config {
     aliases = []
 }
 
+defPrompt :: String
+defPrompt = "> "
+
 parseConfig :: FilePath -> IO Config
 parseConfig path = do
-    input <- lines <$> readFile path
-    let aliasLines = filter ("alias " `isPrefixOf`) input
-        promptLines = filter ("prompt=" `isPrefixOf`) input
-        aliases' = getAliases aliasLines
-    prompt' <- getPrompt promptLines
-    return $ Config {
-        prompt = prompt',
-        aliases = aliases'
-    }
+    input <- readFile path
+    let aliasLines = map head $ input =~ aliasregex
+        prompt' = getPrompt $ input =~ promptregex
+        aliases' = map parseAlias aliasLines
+    if null prompt'
+        then return $ makeConfig defPrompt aliases'
+        else return $ makeConfig prompt' aliases'
+    where aliasregex = "^alias [A-Za-z]+=(\"[A-Za-z]+\"|'[A-Za-z]+')$"
+          promptregex = "^prompt=('.+'|\".+\")$"
 
-getAliases = undefined
+makeConfig :: String -> [Alias] -> Config
+makeConfig p a = Config {
+    prompt = p,
+    aliases = a
+}
 
-getPrompt = undefined
+parseAlias :: String -> Alias
+parseAlias a = Alias { abbrev = abbrev', command = command' }
+    where abbrev' = takeWhile (/= '=') . fromJust $ stripPrefix "alias " a
+          command' = tail . init . fromJust $ stripPrefix toStrip a
+          toStrip = "alias " ++ abbrev' ++ "="
+
+getPrompt :: String -> String
+getPrompt p
+    | null p = defPrompt
+    | otherwise = tail . init . fromJust $ stripPrefix "prompt=" p
 
 shutdown :: IO ()
 shutdown = return ()
