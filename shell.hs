@@ -4,9 +4,11 @@ import Text.Printf (printf)
 import System.Process (proc, createProcess, waitForProcess)
 import System.IO (hFlush, stdout, isEOF)
 import System.FilePath.Posix ((</>))
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, stripPrefix)
 import Control.Exception (try, SomeException)
 import Control.Monad (void)
+import Text.Regex.TDFA ((=~))
+import Data.Maybe (fromJust)
 
 data Config = Config {
     prompt :: String,
@@ -45,15 +47,22 @@ parseConfig path = do
     let aliasLines = filter ("alias " `isPrefixOf`) input
         promptLines = filter ("prompt=" `isPrefixOf`) input
         aliases' = getAliases aliasLines
-    prompt' <- getPrompt promptLines
-    return $ Config {
+    let prompt' = getPrompt promptLines
+    return Config {
         prompt = prompt',
         aliases = aliases'
     }
 
 getAliases = undefined
 
-getPrompt = undefined
+getPrompt :: [String] -> String
+getPrompt [x]
+    | null match = error "Error parsing config file: invalid prompt definition"
+    | otherwise = tail $ init $ fromJust $ stripPrefix "prompt=" match
+    where match = x =~ regex
+          regex = "^prompt=('.+'|\".+\")$"
+
+getPrompt _ = error "Error parsing config file: multiple definitions of prompt"
 
 shutdown :: IO ()
 shutdown = return ()
