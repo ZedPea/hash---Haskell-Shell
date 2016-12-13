@@ -9,7 +9,11 @@ exit -- exit the shell
 
 cd -- change directory - defaults to home directory if no argument given
 
+alias -- display aliases found in config file
+
 ## Config file:
+
+must be located in ~/.hashrc
 
 Set the prompt with
 

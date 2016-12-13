@@ -85,17 +85,18 @@ loop cfg = do
         then putStr "\n"
         else do
     prog <- convertFromAlias cfg . words <$> getLine
-    status <- execute prog
+    status <- execute prog cfg
     case status of
         0 -> loop cfg
         _ -> return ()
 
-execute :: [String] -> IO Int
-execute [] = return 0
-execute (name:args)
+execute :: [String] -> Config -> IO Int
+execute [] _ = return 0
+execute (name:args) cfg
     | name == "cd" = go $ cd args
     | name == "exit" = exit
     | name == "help" = go help
+    | name == "alias" = alias cfg >> return 0
     | otherwise = do
         runProc <- try (launch name args) :: IO (Either SomeException ())
         case runProc of
@@ -113,7 +114,11 @@ convertFromAlias cfg (x:xs) = let c = conv $ aliases cfg
             | otherwise = conv as
 
 builtIn :: [String]
-builtIn = ["cd", "exit", "help"]
+builtIn = ["cd", "exit", "help", "alias"]
+
+alias :: Config -> IO ()
+alias cfg = mapM_ prettyprint (aliases cfg)
+    where prettyprint a = printf "alias %s='%s'\n" (abbrev a) (command a)
 
 cd :: [String] -> IO ()
 cd ['~':rest] = do
