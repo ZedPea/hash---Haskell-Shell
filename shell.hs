@@ -84,14 +84,14 @@ loop cfg = do
     if end
         then putStr "\n"
         else do
-    prog <- words <$> getLine
+    prog <- convertFromAlias cfg . words <$> getLine
     status <- execute prog
     case status of
         0 -> loop cfg
         _ -> return ()
 
 execute :: [String] -> IO Int
-execute [] = exit
+execute [] = return 0
 execute (name:args)
     | name == "cd" = go $ cd args
     | name == "exit" = exit
@@ -102,6 +102,15 @@ execute (name:args)
             Right _ -> return 0
             Left _ -> printf "hash: %s: command not found\n" name >> return 0
     where go f = f >> return 0
+
+convertFromAlias :: Config -> [String] -> [String]
+convertFromAlias _ [] = []
+convertFromAlias cfg (x:xs) = let c = conv $ aliases cfg
+                              in  c:xs
+    where conv [] = x
+          conv (a:as)
+            | abbrev a == x = command a
+            | otherwise = conv as
 
 builtIn :: [String]
 builtIn = ["cd", "exit", "help"]

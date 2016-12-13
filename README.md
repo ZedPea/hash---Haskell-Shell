@@ -22,5 +22,3 @@ Set aliases with
 `alias foo="bar"`
 
 You can use double or single quotes.
-
-the translation has not been implemented yet.
