@@ -116,6 +116,9 @@ builtIn :: [String]
 builtIn = ["cd", "exit", "help"]
 
 cd :: [String] -> IO ()
+cd ['~':rest] = do
+    home <- getHomeDirectory
+    tryChangeDir (home ++ rest)
 cd [dir] = tryChangeDir dir
 cd [] = do
     home <- getHomeDirectory
