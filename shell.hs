@@ -4,11 +4,10 @@ import Text.Printf (printf)
 import System.Process (proc, createProcess, waitForProcess)
 import System.IO (hFlush, stdout, isEOF)
 import System.FilePath.Posix ((</>))
-import Data.List (stripPrefix)
 import Control.Exception (try, SomeException)
-import Control.Monad (void)
+import Control.Monad (void, unless)
 import Text.Regex.TDFA ((=~))
-import Data.Maybe (fromJust)
+import Data.Maybe (mapMaybe)
 
 data Config = Config {
     prompt :: String,
@@ -37,7 +36,7 @@ loadConfig = do
 
 defaultConfig :: Config
 defaultConfig = Config {
-    prompt = "> ",
+    prompt = defPrompt,
     aliases = []
 }
 
@@ -46,36 +45,29 @@ defPrompt = "> "
 
 parseConfig :: FilePath -> IO Config
 parseConfig path = do
-    input <- readFile path
-    let aliasLines = map head $ input =~ aliasregex
-        prompt' = getPrompt $ input =~ promptregex
-        aliases' = map parseAlias aliasLines
-    if null prompt'
-        then return $ makeConfig defPrompt aliases'
-        else return $ makeConfig prompt' aliases'
-    where aliasregex = "^alias [A-Za-z]+=(\"[A-Za-z]+\"|'[A-Za-z]+')$"
-          promptregex = "^prompt=('.+'|\".+\")$"
+    input <- lines <$> readFile path
+    let aliases' = mapMaybe getAlias $ concatMap (=~ aliasregex) input
+        prompt' = getPrompt $ concatMap (=~ promptregex) input
+    return $ Config prompt' aliases'
+    where aliasregex = "^alias (.+)=\'(.+)\'$"
+          promptregex = "^prompt=\'(.+)\'"
 
-makeConfig :: String -> [Alias] -> Config
-makeConfig p a = Config {
-    prompt = p,
-    aliases = a
-}
-
-parseAlias :: String -> Alias
-parseAlias a = Alias { abbrev = abbrev', command = command' }
-    where abbrev' = takeWhile (/= '=') . fromJust $ stripPrefix "alias " a
-          command' = tail . init . fromJust $ stripPrefix toStrip a
-          toStrip = "alias " ++ abbrev' ++ "="
-
-getPrompt :: String -> String
+getPrompt :: [[String]] -> String
 getPrompt p
-    | null p = defPrompt
-    | otherwise = tail . init . fromJust $ stripPrefix "prompt=" p
+    | not $ null p && length (head p) == 2 = head p !! 1
+    | otherwise = defPrompt
+
+getAlias :: [String] -> Maybe Alias
+getAlias input
+    | length input == 3 = Just $ Alias (input !! 1) (input !! 2)
+    | otherwise = Nothing
 
 shutdown :: IO ()
 shutdown = return ()
 
+{- exception from hGetContents if EOF inputted and don't check for it, EOF
+also closes the program, presumably exiting to another shell, so print a 
+newline so it looks more graceful -}
 loop :: Config -> IO ()
 loop cfg = do
     putStr (prompt cfg)
@@ -84,34 +76,28 @@ loop cfg = do
     if end
         then putStr "\n"
         else do
-    prog <- convertFromAlias cfg . words <$> getLine
-    status <- execute prog cfg
-    case status of
-        0 -> loop cfg
-        _ -> return ()
+    prog <- map (convert cfg) . words <$> getLine
+    unless (not (null prog) && head prog == "exit") $ do
+        execute prog cfg 
+        loop cfg
 
-execute :: [String] -> Config -> IO Int
-execute [] _ = return 0
-execute (name:args) cfg
-    | name == "cd" = go $ cd args
-    | name == "exit" = exit
-    | name == "help" = go help
-    | name == "alias" = alias cfg >> return 0
-    | otherwise = do
-        runProc <- try (launch name args) :: IO (Either SomeException ())
-        case runProc of
-            Right _ -> return 0
-            Left _ -> printf "hash: %s: command not found\n" name >> return 0
-    where go f = f >> return 0
+execute :: [String] -> Config -> IO ()
+execute [] _ = return ()
+execute ("cd":args) _ = cd args
+execute ("help":_) _ = help
+execute ("alias":_) cfg = alias cfg
+execute (name:args) _ = do
+    runProc <- try (launch name args) :: IO (Either SomeException ())
+    case runProc of
+        Right _ -> return ()
+        Left _ -> printf "hash: %s: command not found\n" name
 
-convertFromAlias :: Config -> [String] -> [String]
-convertFromAlias _ [] = []
-convertFromAlias cfg (x:xs) = let c = conv $ aliases cfg
-                              in  c:xs
-    where conv [] = x
-          conv (a:as)
-            | abbrev a == x = command a
-            | otherwise = conv as
+convert :: Config -> String -> String
+convert cfg input = replace (aliases cfg)
+    where replace [] = input
+          replace (x:xs)
+            | abbrev x == input = command x
+            | otherwise = replace xs
 
 builtIn :: [String]
 builtIn = ["cd", "exit", "help", "alias"]
@@ -139,9 +125,6 @@ tryChangeDir dir = do
             | isDir = setCurrentDirectory dir
             | isFile = printf "cd: %s: Not a directory\n" dir
             | otherwise = printf "cd: %s: No such file or directory\n" dir
-
-exit :: IO Int
-exit = return 1
 
 help :: IO ()
 help = do

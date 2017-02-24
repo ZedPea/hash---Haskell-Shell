@@ -1,6 +1,8 @@
 # hash - haskell-shell
 A very simple shell written in haskell.
 
+Code is pretty rubbish, not in very good haskell style
+
 ## Inbuilt commands:
 
 help -- displays a help command then exits
@@ -17,12 +19,10 @@ must be located in ~/.hashrc
 
 Set the prompt with
 
-`prompt="newprompt> "`
-
-You can use double or single quotes.
+`prompt='newprompt> '`
 
 Set aliases with
 
-`alias foo="bar"`
+`alias foo='bar'`
 
-You can use double or single quotes.
+You need to have single quotes around the prompt/alias, as indicated in above examples.
